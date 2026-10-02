@@ -1,0 +1,1595 @@
+{
+  "name": "Crypto Market Intelligence & Alerting - Portfolio",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 30
+            }
+          ]
+        }
+      },
+      "id": "6ea543b2-456f-4679-bda6-76cf9759a3f8",
+      "name": "Every 30 Minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "cfg-run_id",
+              "name": "run_id",
+              "value": "={{ $execution.id }}",
+              "type": "string"
+            },
+            {
+              "id": "cfg-observed_at",
+              "name": "observed_at",
+              "value": "={{ $now.toISO() }}",
+              "type": "string"
+            },
+            {
+              "id": "cfg-watch_change_pct",
+              "name": "watch_change_pct",
+              "value": 3,
+              "type": "number"
+            },
+            {
+              "id": "cfg-high_change_pct",
+              "name": "high_change_pct",
+              "value": 8,
+              "type": "number"
+            },
+            {
+              "id": "cfg-watch_range_pct",
+              "name": "watch_range_pct",
+              "value": 5,
+              "type": "number"
+            },
+            {
+              "id": "cfg-high_range_pct",
+              "name": "high_range_pct",
+              "value": 12,
+              "type": "number"
+            },
+            {
+              "id": "cfg-watch_turnover_pct",
+              "name": "watch_turnover_pct",
+              "value": 15,
+              "type": "number"
+            },
+            {
+              "id": "cfg-max_age_minutes",
+              "name": "max_age_minutes",
+              "value": 15,
+              "type": "number"
+            },
+            {
+              "id": "cfg-enable_ai",
+              "name": "enable_ai",
+              "value": false,
+              "type": "boolean"
+            },
+            {
+              "id": "cfg-enable_sheets",
+              "name": "enable_sheets",
+              "value": false,
+              "type": "boolean"
+            },
+            {
+              "id": "cfg-enable_telegram",
+              "name": "enable_telegram",
+              "value": false,
+              "type": "boolean"
+            },
+            {
+              "id": "cfg-telegram_chat_id",
+              "name": "telegram_chat_id",
+              "value": "",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "ae3d7601-cd7d-44c0-824e-8d2bed9b4178",
+      "name": "Monitor Settings",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        224,
+        112
+      ],
+      "notes": "Edit thresholds here. Demonstration thresholds, not investment rules. Enable AI after testing. Select a destination spreadsheet/tab and enable the Sheets node + flag. Add Telegram credential/chat ID, enable both Telegram nodes + flag. Draft is unpublished."
+    },
+    {
+      "parameters": {},
+      "id": "9d5f3c55-241a-46d1-b9c4-0b75861f6886",
+      "name": "Manual Preview",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.coingecko.com/api/v3/coins/markets",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "vs_currency",
+              "value": "usd"
+            },
+            {
+              "name": "ids",
+              "value": "bitcoin,ethereum"
+            },
+            {
+              "name": "sparkline",
+              "value": "false"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 15000
+        }
+      },
+      "id": "02f4b52a-76c9-4e65-9516-fc1ca2d1e820",
+      "name": "Fetch BTC + ETH - CoinGecko",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        448,
+        112
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const cfg=$('Monitor Settings').first().json;\nconst input=$input.first().json;\nconst body=Array.isArray(input.body)?input.body:[];\nconst assets=['bitcoin','ethereum'].map(id=>{\n const c=body.find(x=>x.id===id)||{};\n return {symbol:id==='bitcoin'?'BTC':'ETH',price_usd:c.current_price,change_24h_pct:c.price_change_percentage_24h,volume_24h_usd:c.total_volume,market_cap_usd:c.market_cap,high_24h:c.high_24h,low_24h:c.low_24h,source:'CoinGecko',volume_basis:'aggregate quote USD',source_updated_at:c.last_updated,observed_at:cfg.observed_at,degraded:false};\n});\nconst finite=v=>typeof v==='number'&&Number.isFinite(v);\nconst primary_ok=assets.every(a=>finite(a.price_usd)&&a.price_usd>0&&finite(a.change_24h_pct)&&finite(a.volume_24h_usd)&&a.volume_24h_usd>=0&&finite(a.high_24h)&&finite(a.low_24h)&&a.low_24h>0&&a.high_24h>=a.low_24h&&Number.isFinite(Date.parse(a.source_updated_at))&&(Date.parse(cfg.observed_at)-Date.parse(a.source_updated_at))<=cfg.max_age_minutes*60000&&(Date.parse(cfg.observed_at)-Date.parse(a.source_updated_at))>=-120000);\nreturn [{json:{assets,primary_ok}}];"
+      },
+      "id": "447089b7-18c0-4ed0-85c7-6c678c9795e2",
+      "name": "Map + Check Primary Snapshot",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        448,
+        352
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.primary_ok }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "64261108-fb86-45bf-af03-9be47535c7fa",
+      "name": "Primary Complete + Fresh?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        672,
+        352
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const incoming=$input.all().flatMap(x=>Array.isArray(x.json.assets)?x.json.assets:[x.json]);\nreturn incoming.map(a=>{\nconst errors=[];const fin=v=>typeof v==='number'&&Number.isFinite(v);\nif(!['BTC','ETH'].includes(a.symbol))errors.push('Unsupported/missing symbol');\nfor(const k of ['price_usd','change_24h_pct','volume_24h_usd','high_24h','low_24h'])if(!fin(a[k]))errors.push('Missing or invalid '+k);\nif(!(a.price_usd>0)||!(a.low_24h>0)||!(a.high_24h>=a.low_24h)||!(a.volume_24h_usd>=0))errors.push('Invalid price, volume or range');\nreturn {json:{...a,valid:errors.length===0,validation_errors:errors,error_stage:'market_validation'}};\n});"
+      },
+      "id": "fbde0602-3f53-41fd-a238-d1705a088292",
+      "name": "Validate Required Fields",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        352
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{json:{symbol:'BTC',product:'BTC-USD'}},{json:{symbol:'ETH',product:'ETH-USD'}}];"
+      },
+      "id": "429faba1-1abf-4550-9050-a03082c6ae82",
+      "name": "Prepare Fallback Products",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        688
+      ],
+      "notes": "Triggered by primary HTTP failure, missing required fields or stale data. Replaces the entire snapshot so sources do not mix."
+    },
+    {
+      "parameters": {
+        "url": "={{ 'https://api.exchange.coinbase.com/products/' + $json.product + '/stats' }}",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 500
+            }
+          },
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 15000
+        }
+      },
+      "id": "b2961215-7602-4757-9071-c8d99c64e69c",
+      "name": "Fallback - Coinbase 24h Stats",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        448,
+        688
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const cfg=$('Monitor Settings').first().json;\nreturn $input.all().map((item,i)=>{\nconst d=item.json.body||{};const p=$('Prepare Fallback Products').itemMatching(i).json;\nconst num=v=>v===null||v===undefined||v===''?null:Number(v);\nconst price=num(d.last),open=num(d.open),volume=num(d.volume);\nreturn {json:{symbol:p.symbol,price_usd:price,change_24h_pct:open>0&&price>0?(price/open-1)*100:null,volume_24h_usd:volume!==null&&price>0?volume*price:null,market_cap_usd:null,high_24h:num(d.high),low_24h:num(d.low),source:'Coinbase Exchange',volume_basis:'single exchange base volume x last price (USD estimate)',source_updated_at:null,observed_at:cfg.observed_at,degraded:true,freshness:'receipt time only; source timestamp unavailable'},pairedItem:{item:i}};\n});"
+      },
+      "id": "5b5e8517-b790-4e6d-b1e2-074bf8e69df9",
+      "name": "Normalize Exchange Fallback",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        688
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const cfg=$('Monitor Settings').first().json;\nreturn $input.all().map(({json:d})=>({json:{run_id:cfg.run_id,observed_at:cfg.observed_at,error_stage:d.error_stage||'external_integration',symbol:d.symbol||'',error_message:Array.isArray(d.validation_errors)&&d.validation_errors.length?d.validation_errors.join('; '):String(d.error?.message||d.error||d.message||'Unexpected response or routing value').slice(0,400),notification_text:'CRYPTO MONITOR ERROR | run '+cfg.run_id+' | '+(d.error_stage||'external integration')+' | '+(d.symbol||'')+'. Inspect the n8n execution for details.'}}));"
+      },
+      "id": "c121b556-9886-4260-8f54-08d951bf9a13",
+      "name": "Build Error Notification",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2640,
+        1104
+      ],
+      "notes": "Errors stay visible in execution output. Telegram text intentionally excludes raw provider errors and credentials. Market data failures do not invent successful records."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "04f7615e-c2fe-445f-b412-314751f2311f",
+      "name": "Valid Market Record?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1104,
+        352
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "price-abs_change_24h_pct",
+              "name": "abs_change_24h_pct",
+              "value": "={{ Math.abs($json.change_24h_pct) }}",
+              "type": "number"
+            },
+            {
+              "id": "price-price_signal",
+              "name": "price_signal",
+              "value": "={{ Math.abs($json.change_24h_pct) >= $('Monitor Settings').first().json.high_change_pct ? 'high' : Math.abs($json.change_24h_pct) >= $('Monitor Settings').first().json.watch_change_pct ? 'watch' : 'normal' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "0b824e4a-5208-4252-ac3f-b85017f0abc2",
+      "name": "Calculate Price Change Signal",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        1328,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "vol-turnover_24h_pct",
+              "name": "turnover_24h_pct",
+              "value": "={{ $json.market_cap_usd > 0 ? 100 * $json.volume_24h_usd / $json.market_cap_usd : null }}",
+              "type": "number"
+            },
+            {
+              "id": "vol-volume_signal",
+              "name": "volume_signal",
+              "value": "={{ $json.market_cap_usd > 0 ? (100 * $json.volume_24h_usd / $json.market_cap_usd >= $('Monitor Settings').first().json.watch_turnover_pct ? 'elevated' : 'normal') : 'unavailable' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "11707cc1-8032-4b16-8269-bd210625fe07",
+      "name": "Calculate Volume Activity",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        1328,
+        352
+      ],
+      "notes": "Turnover = 24h aggregate volume / market cap. Activity proxy only; not a volume-spike calculation. Unavailable for exchange-only fallback; never treated as zero."
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "range-range_24h_pct",
+              "name": "range_24h_pct",
+              "value": "={{ 100 * ($json.high_24h - $json.low_24h) / $json.price_usd }}",
+              "type": "number"
+            },
+            {
+              "id": "range-volatility_signal",
+              "name": "volatility_signal",
+              "value": "={{ 100 * ($json.high_24h - $json.low_24h) / $json.price_usd >= $('Monitor Settings').first().json.high_range_pct ? 'high' : 100 * ($json.high_24h - $json.low_24h) / $json.price_usd >= $('Monitor Settings').first().json.watch_range_pct ? 'watch' : 'normal' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "5ccc149d-0c6d-4e44-9f5f-eae1fe615d81",
+      "name": "Calculate 24h Range Proxy",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        1328,
+        608
+      ],
+      "notes": "Volatility proxy = (24h high - 24h low) / current price × 100. This is not standard deviation or annualized realized volatility."
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all().map(({json:a})=>{\nconst reasons=[];\nif(a.price_signal!=='normal')reasons.push('24h price move '+a.change_24h_pct.toFixed(2)+'%');\nif(a.volatility_signal!=='normal')reasons.push('24h range proxy '+a.range_24h_pct.toFixed(2)+'%');\nif(a.volume_signal==='elevated')reasons.push('Elevated volume / market cap turnover');\nif(a.degraded)reasons.push('Fallback exchange data; aggregate turnover unavailable; freshness unverified');\nconst risk=a.price_signal==='high'||a.volatility_signal==='high'?'high-risk':a.price_signal==='watch'||a.volatility_signal==='watch'||a.volume_signal==='elevated'||a.degraded?'watch':'normal';\nreturn {json:{...a,risk,reasons:reasons.length?reasons:['Within configured demonstration thresholds']}};\n});"
+      },
+      "id": "2f1ad806-4d50-4140-8dda-1583c82c3b18",
+      "name": "Classify + Explain Signals",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1552,
+        352
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.risk }}",
+                    "rightValue": "normal",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "normal"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.risk }}",
+                    "rightValue": "watch",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "watch"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.risk }}",
+                    "rightValue": "high-risk",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "high-risk"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra",
+          "renameFallbackOutput": "Unexpected"
+        }
+      },
+      "id": "b8ece761-aedc-4af4-b90a-4b58d77375d7",
+      "name": "Route Normal - Watch - High Risk",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        1760,
+        352
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "normal-priority",
+              "name": "priority",
+              "value": "info",
+              "type": "string"
+            },
+            {
+              "id": "normal-alert_required",
+              "name": "alert_required",
+              "value": false,
+              "type": "boolean"
+            },
+            {
+              "id": "normal-review_action",
+              "name": "review_action",
+              "value": "Record observation; next scheduled check.",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "8785a8c9-ea01-44dc-9bf3-4e7e7e209f78",
+      "name": "NORMAL - Record Observation",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        1984,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "numberInputs": 3
+      },
+      "id": "84e1283e-5cfc-4cb2-ba64-ddeb1c78548b",
+      "name": "Merge Classified Assets",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        2208,
+        352
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "watch-priority",
+              "name": "priority",
+              "value": "watch",
+              "type": "string"
+            },
+            {
+              "id": "watch-alert_required",
+              "name": "alert_required",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "watch-review_action",
+              "name": "review_action",
+              "value": "Review source, change, range and data quality.",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "b096a333-f1eb-47b9-bdf5-9f1d9cce8493",
+      "name": "WATCH - Request Review",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        1984,
+        352
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "high-priority",
+              "name": "priority",
+              "value": "high",
+              "type": "string"
+            },
+            {
+              "id": "high-alert_required",
+              "name": "alert_required",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "high-review_action",
+              "name": "review_action",
+              "value": "Prompt human review of unusually large price/range moves.",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "93e7db14-1322-4bf5-b93b-17c011cf1966",
+      "name": "HIGH RISK - Escalate Review",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        1984,
+        608
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const cfg=$('Monitor Settings').first().json;\nconst assets=$input.all().map(x=>x.json).sort((a,b)=>a.symbol.localeCompare(b.symbol));\nconst missing=['BTC','ETH'].filter(s=>!assets.some(a=>a.symbol===s));\nconst snapshot_id=new Date(Math.floor(Date.parse(cfg.observed_at)/1800000)*1800000).toISOString();\nconst alerts=assets.filter(a=>a.alert_required);\nconst deterministic_summary=assets.map(a=>a.symbol+': $'+a.price_usd.toFixed(2)+' | 24h '+a.change_24h_pct.toFixed(2)+'% | range '+a.range_24h_pct.toFixed(2)+'% | '+a.risk.toUpperCase()+' | '+a.source+' | '+a.reasons.join('; ')).join('\\n')+(missing.length?'\\nINCOMPLETE COVERAGE: '+missing.join(', '):'')+'\\nRange is a volatility proxy. Monitoring only; no trading recommendations.';\nreturn [{json:{run_id:cfg.run_id,observed_at:cfg.observed_at,snapshot_id,assets,missing_symbols:missing,coverage:assets.length+'/2',alert_required:alerts.length>0||missing.length>0,deterministic_summary}}];"
+      },
+      "id": "db1c1ff3-42ff-445b-9c22-05f556de5505",
+      "name": "Build Market Snapshot",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2432,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "prompt-ai_prompt",
+              "name": "ai_prompt",
+              "value": "={{ 'Write a concise market-monitoring summary using only this JSON. State source, coverage, fallback limitations, and threshold reasons. Do not invent events, forecast prices, or recommend trades. Describe range as a volatility proxy and turnover as activity, not a volume spike. Do not change calculated risk labels. JSON: ' + JSON.stringify($json) }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "6481a640-785a-41a4-9da2-2f6e9e26ae75",
+      "name": "Prepare AI-Ready Brief",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        2432,
+        352
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $('Monitor Settings').first().json.enable_ai }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "2f3b4ae5-0388-4d21-9e0c-8fac1e57a4c2",
+      "name": "AI Summary Enabled?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2640,
+        352
+      ]
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4.1-mini",
+          "cachedResultName": "GPT-4.1-MINI"
+        },
+        "responses": {
+          "values": [
+            {
+              "content": "={{ $json.ai_prompt }}"
+            }
+          ]
+        },
+        "simplify": false,
+        "builtInTools": {},
+        "options": {
+          "maxTokens": 450,
+          "store": false
+        }
+      },
+      "id": "40b6b301-6703-4fdc-9ab1-6dad51249c06",
+      "name": "Optional AI Market Summary",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 2.3,
+      "position": [
+        2864,
+        80
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "onError": "continueErrorOutput",
+      "notes": "Existing OpenAI credential. Off by Monitor Settings.enable_ai until you choose to test. Failures fall back to deterministic summary."
+    },
+    {
+      "parameters": {
+        "jsCode": "const original=$('Prepare AI-Ready Brief').first().json;\nconst data=$input.first().json;\nconst text=Array.isArray(data.output)?data.output.flatMap(x=>x.content||[]).filter(x=>x.type==='output_text').map(x=>x.text).join('\\n'):'';\nconst aiOk=typeof text==='string'&&text.trim().length>0&&!data.error;\nreturn [{json:{...original,summary:aiOk?text.trim():original.deterministic_summary,summary_mode:aiOk?'AI-generated (review required)':'deterministic',ai_error:Boolean(data.error)}}];"
+      },
+      "id": "aeb471ae-cc3a-492d-ae70-46d28fee7ea1",
+      "name": "Resolve AI or Factual Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2864,
+        608
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const s=$input.first().json;return s.assets.map(a=>({json:{record_id:s.snapshot_id+'|'+a.symbol,run_id:s.run_id,observed_at:s.observed_at,symbol:a.symbol,source:a.source,price_usd:a.price_usd,change_24h_pct:a.change_24h_pct,volume_24h_usd:a.volume_24h_usd,volume_basis:a.volume_basis,turnover_24h_pct:a.turnover_24h_pct??'',range_24h_pct:a.range_24h_pct,risk:a.risk,reasons:a.reasons.join('; '),coverage:s.coverage,summary_mode:s.summary_mode,summary:s.summary}}));"
+      },
+      "id": "85b581e9-3d7e-42a2-87c9-b7a559eadada",
+      "name": "Map Structured Log Rows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3088,
+        48
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $('Monitor Settings').first().json.enable_sheets }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "d10bfe3a-efee-42d7-96e4-b1f559d7490e",
+      "name": "Sheets Logging Enabled?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        3312,
+        48
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "Select Crypto Market Monitor Log"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "Select Market Log tab"
+        }
+      },
+      "id": "71697dc0-33ea-4023-92db-47bb5f4b4710",
+      "name": "Google Sheets - Select Log Destination",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        3520,
+        -64
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "disabled": true,
+      "onError": "continueErrorOutput",
+      "notes": "Credential exists; no Crypto spreadsheet found. Select document and tab; create matching headers from Map Structured Log Rows. Enable this node and enable_sheets flag. Upsert key is 30-minute UTC bucket + symbol; retries update the same row."
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "preview-logging_status",
+              "name": "logging_status",
+              "value": "Preview only: Google Sheets not enabled.",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "8c10aad1-3ee0-4d0d-b637-ef456055cfe5",
+      "name": "Preview Log Rows - No Write",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        3520,
+        192
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.alert_required && $('Monitor Settings').first().json.enable_telegram && $('Monitor Settings').first().json.telegram_chat_id !== '' }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "ac2b7fd7-6a55-481d-9f69-73f290803791",
+      "name": "Alert Needed + Telegram Enabled?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        3088,
+        608
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "message-telegram_text",
+              "name": "telegram_text",
+              "value": "={{ ('CRYPTO MONITOR | ' + $json.coverage + ' assets | ' + $json.observed_at + '\\n' + $json.deterministic_summary).slice(0,3500) }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "d28b019e-e50d-4c3c-9a2e-5573fa02e3fc",
+      "name": "Compose Telegram Market Alert",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        3312,
+        496
+      ],
+      "notes": "Uses factual calculated summary even when AI is enabled. At most one combined market alert per scheduled run. Persistent WATCH/HIGH conditions repeat every 30 minutes; no cross-run cooldown."
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Monitor Settings').first().json.telegram_chat_id }}",
+        "text": "={{ $json.telegram_text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "disable_web_page_preview": true,
+          "parse_mode": "HTML"
+        }
+      },
+      "id": "b84b8e6c-b5ea-4912-925a-7027ce01fccc",
+      "name": "Telegram - Configure Market Alerts",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        3520,
+        496
+      ],
+      "disabled": true,
+      "onError": "continueErrorOutput",
+      "notes": "Add a Telegram bot credential, set chat ID in Monitor Settings, enable both Telegram nodes and enable_telegram. No retries on sends to avoid duplicate delivery on uncertain timeouts."
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "quiet-notification_status",
+              "name": "notification_status",
+              "value": "No alert sent: normal conditions or Telegram not configured.",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "817dc500-943c-4d17-8d5e-dfec6a4bbd03",
+      "name": "No Alert - Inspect Snapshot",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        3312,
+        784
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $('Monitor Settings').first().json.enable_telegram && $('Monitor Settings').first().json.telegram_chat_id !== '' }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "e0452324-503e-47eb-bea1-3444ddfd9493",
+      "name": "Error Telegram Configured?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2864,
+        1104
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Monitor Settings').first().json.telegram_chat_id }}",
+        "text": "={{ $json.notification_text }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML"
+        }
+      },
+      "id": "a0debc15-65af-4458-8de8-0180bd447533",
+      "name": "Telegram - Configure Error Notices",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        3088,
+        1024
+      ],
+      "disabled": true,
+      "onError": "continueErrorOutput",
+      "notes": "Same bot/chat as market alerts. Error handling is in this workflow; no separate handler required."
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "deadletter-delivery_status",
+              "name": "delivery_status",
+              "value": "Notification unavailable or failed; inspect execution data.",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "0761c3f3-bca4-4d91-9eea-2d08f212f25f",
+      "name": "Error Record - Inspect Execution",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        3312,
+        1264
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 01 / COLLECT + VALIDATE\nBTC & ETH · USD · every 30 minutes\n\nCoinGecko → freshness check → Coinbase fallback.\nRetries: 3 attempts, 2-second spacing. Missing fields take the error path.",
+        "height": 250,
+        "width": 1250,
+        "color": 5
+      },
+      "id": "624c4891-dc94-4feb-92aa-37373185dca2",
+      "name": "Guide - Ingestion",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -80,
+        -304
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 02 / EXPLAINABLE SIGNALS\nPrice change → volume turnover → 24h range proxy\n\nNORMAL / WATCH / HIGH-RISK → merge both assets.\nThresholds are adjustable demo rules. Range is not statistical volatility; turnover is not a volume spike.",
+        "height": 250,
+        "width": 1100,
+        "color": 4
+      },
+      "id": "320327b1-7ee7-42bd-a703-bab38ee74694",
+      "name": "Guide - Signals",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1264,
+        -304
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 03 / SUMMARIZE + DELIVER\nOpenAI credential connected; enable_ai is OFF.\nSheets credential connected; select document/tab + enable node/flag.\nTelegram needs bot credential + chat ID + enable both nodes/flag.\n\nDefault preview makes no writes or sends. Publish only after testing.",
+        "height": 250,
+        "width": 1320,
+        "color": 6
+      },
+      "id": "9894418a-a210-4461-bd2a-a31bf27b763c",
+      "name": "Guide - Configure Outputs",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2400,
+        -304
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## PORTFOLIO REVIEW / RELIABILITY\n**37 processing nodes • all visible • no collapsed groups**\n\n1. Execute manually and inspect **Preview Log Rows** + **No Alert – Inspect Snapshot**.\n2. Configure integrations in **Monitor Settings** and the named output nodes.\n3. Google Sheets headers: record_id, run_id, observed_at, symbol, source, price_usd, change_24h_pct, volume_24h_usd, volume_basis, turnover_24h_pct, range_24h_pct, risk, reasons, coverage, summary_mode, summary.\n\nFallback is single-exchange data: estimated quote volume, unknown source timestamp and unavailable aggregate turnover. Fallback always requests WATCH review. Invalid records are excluded; summary reports incomplete BTC/ETH coverage. Errors route to the visible notification branch; unsent errors remain in execution data.\n\nAlerts repeat each 30-minute run while conditions persist. Sheets upserts one row per asset per UTC 30-minute bucket. No orders, wallets or transactions.",
+        "height": 440,
+        "width": 2240,
+        "color": 7
+      },
+      "id": "c029b61f-6cee-493a-9b7f-53724d499a20",
+      "name": "Guide - Reliability and Review",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        1088
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Every 30 Minutes": {
+      "main": [
+        [
+          {
+            "node": "Monitor Settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Monitor Settings": {
+      "main": [
+        [
+          {
+            "node": "Fetch BTC + ETH - CoinGecko",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Preview": {
+      "main": [
+        [
+          {
+            "node": "Monitor Settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch BTC + ETH - CoinGecko": {
+      "main": [
+        [
+          {
+            "node": "Map + Check Primary Snapshot",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Fallback Products",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Map + Check Primary Snapshot": {
+      "main": [
+        [
+          {
+            "node": "Primary Complete + Fresh?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Primary Complete + Fresh?": {
+      "main": [
+        [
+          {
+            "node": "Validate Required Fields",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Fallback Products",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Required Fields": {
+      "main": [
+        [
+          {
+            "node": "Valid Market Record?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Fallback Products": {
+      "main": [
+        [
+          {
+            "node": "Fallback - Coinbase 24h Stats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fallback - Coinbase 24h Stats": {
+      "main": [
+        [
+          {
+            "node": "Normalize Exchange Fallback",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Error Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Exchange Fallback": {
+      "main": [
+        [
+          {
+            "node": "Validate Required Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Error Notification": {
+      "main": [
+        [
+          {
+            "node": "Error Telegram Configured?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Valid Market Record?": {
+      "main": [
+        [
+          {
+            "node": "Calculate Price Change Signal",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Error Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Price Change Signal": {
+      "main": [
+        [
+          {
+            "node": "Calculate Volume Activity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Volume Activity": {
+      "main": [
+        [
+          {
+            "node": "Calculate 24h Range Proxy",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate 24h Range Proxy": {
+      "main": [
+        [
+          {
+            "node": "Classify + Explain Signals",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classify + Explain Signals": {
+      "main": [
+        [
+          {
+            "node": "Route Normal - Watch - High Risk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Normal - Watch - High Risk": {
+      "main": [
+        [
+          {
+            "node": "NORMAL - Record Observation",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "WATCH - Request Review",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "HIGH RISK - Escalate Review",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Error Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "NORMAL - Record Observation": {
+      "main": [
+        [
+          {
+            "node": "Merge Classified Assets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Classified Assets": {
+      "main": [
+        [
+          {
+            "node": "Build Market Snapshot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WATCH - Request Review": {
+      "main": [
+        [
+          {
+            "node": "Merge Classified Assets",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "HIGH RISK - Escalate Review": {
+      "main": [
+        [
+          {
+            "node": "Merge Classified Assets",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Build Market Snapshot": {
+      "main": [
+        [
+          {
+            "node": "Prepare AI-Ready Brief",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare AI-Ready Brief": {
+      "main": [
+        [
+          {
+            "node": "AI Summary Enabled?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Summary Enabled?": {
+      "main": [
+        [
+          {
+            "node": "Optional AI Market Summary",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Resolve AI or Factual Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Optional AI Market Summary": {
+      "main": [
+        [
+          {
+            "node": "Resolve AI or Factual Summary",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Resolve AI or Factual Summary",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Build Error Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve AI or Factual Summary": {
+      "main": [
+        [
+          {
+            "node": "Map Structured Log Rows",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Alert Needed + Telegram Enabled?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Map Structured Log Rows": {
+      "main": [
+        [
+          {
+            "node": "Sheets Logging Enabled?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sheets Logging Enabled?": {
+      "main": [
+        [
+          {
+            "node": "Google Sheets - Select Log Destination",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Preview Log Rows - No Write",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Sheets - Select Log Destination": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Build Error Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Alert Needed + Telegram Enabled?": {
+      "main": [
+        [
+          {
+            "node": "Compose Telegram Market Alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Alert - Inspect Snapshot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compose Telegram Market Alert": {
+      "main": [
+        [
+          {
+            "node": "Telegram - Configure Market Alerts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram - Configure Market Alerts": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Build Error Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Error Telegram Configured?": {
+      "main": [
+        [
+          {
+            "node": "Telegram - Configure Error Notices",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Record - Inspect Execution",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram - Configure Error Notices": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Error Record - Inspect Execution",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": true,
+    "timezone": "Asia/Qatar",
+    "saveManualExecutions": true,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "executionTimeout": 300
+  },
+  "nodeGroups": [],
+  "tags": []
+}
